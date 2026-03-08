@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
-    "@notionhq/client": "^5.11.1",
+    "@notionhq/client": "^2",
     "dotenv": "^17.3.1",
     "grammy": "^1.41.1"
   }
