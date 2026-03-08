@@ -211,3 +211,12 @@ bot.on("message:text", async (ctx) => {
 
 bot.start();
 console.log("🚀 Stratagem Bot is running with Bun...");
+// 🔧 Render port detection fix
+const port = process.env.PORT || 3000;
+Bun.serve({
+  port: +port,
+  fetch() {
+    return new Response("🤖 Stratagem Bot is running!", { status: 200 });
+  },
+});
+console.log(`✓ HTTP server on port ${port} for Render health checks`);
