@@ -10,7 +10,7 @@ if (!process.env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY missing!");
 
 const bot = new Bot(process.env.TELEGRAM_TOKEN);
 
-// ✅ Initialize Notion client (no manual binding needed)
+// ✅ Initialize Notion client
 const notion = new Client({
   auth: process.env.NOTION_API_KEY,
   notionVersion: "2022-06-28",
@@ -47,6 +47,12 @@ TASK:
 4. IF "DAILY_JOURNAL":
    - "intent": "DAILY_JOURNAL", "title": "...", "content": "...", "mermaid": null, "replyText": "..."
 
+STRICT MERMAID RULES:
+- "mermaid" must be valid Mermaid code.
+- All node IDs and labels must be in English (ASCII only).
+- Do NOT use Burmese or other non-ASCII characters inside the Mermaid diagram.
+- Burmese text is allowed only in "content" and "replyText", not in "mermaid".
+
 JSON Format:
 {"intent":"...", "title":"...", "content":"...", "mermaid":"...", "replyText":"..."}
 
@@ -78,10 +84,10 @@ function splitText(text: string, limit: number = 2000): string[] {
   return chunks;
 }
 
-// ✅ FIXED: Query Notion database using official pattern
+// ✅ Query Notion database (with small any-cast for current SDK typings)
 async function getRecentNotionLogs(): Promise<string> {
   try {
-    const response = await notion.databases.query({
+    const response = await (notion as any).databases.query({
       database_id: process.env.NOTION_DATABASE_ID!,
       page_size: 5,
       sorts: [
@@ -99,8 +105,8 @@ async function getRecentNotionLogs(): Promise<string> {
     return response.results
       .map((page: any) => {
         const titleProp = page.properties?.Name || page.properties?.title;
-        const title =
-          titleProp?.title?.[0]?.plain_text || "Untitled";
+       const title =
+  titleProp?.title?.[0]?.plain_text || "Untitled";
 
         return `- ${title}`;
       })
@@ -125,7 +131,18 @@ bot.on("message:text", async (ctx) => {
       throw new Error("Invalid response structure from AI");
     }
 
-    const { intent, title, content, mermaid, replyText } = response;
+    let { intent, title, content, mermaid, replyText } = response as {
+      intent: string;
+      title: string | null;
+      content: string | null;
+      mermaid: string | null;
+      replyText: string | null;
+    };
+
+    // 🔐 Ensure mermaid is ASCII-only so Mermaid parser doesn't choke on Burmese
+    if (mermaid && mermaid !== "null") {
+      mermaid = String(mermaid).replace(/[^\x00-\x7F]/g, "");
+    }
 
     if (intent === "CONVERSATION") {
       await ctx.api.editMessageText(
@@ -159,10 +176,12 @@ bot.on("message:text", async (ctx) => {
           rich_text: [{ text: { content: "System Mindmap" } }],
         },
       });
+
       const mermaidChunks = splitText(String(mermaid), 2000);
       const mermaidRichTextArray = mermaidChunks.map((chunk) => ({
         text: { content: chunk },
       }));
+
       children.push({
         code: { language: "mermaid", rich_text: mermaidRichTextArray },
       });
