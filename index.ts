@@ -26,9 +26,9 @@ TASK:
    - Reply in Burmese.
    - "intent": "CONVERSATION"
    - "replyText": Your friendly response.
-   - "title", "content", "mermaid": null.
+   - "title": null, "content": null, "mermaid": null.
 3. IF "STRATEGIC_PLAN" or "DAILY_JOURNAL":
-   - "replyText": A short encouraging message in Burmese acknowledging the save. (e.g., "မိုက်တယ်! Notion ထဲ သိမ်းလိုက်ပြီနော်။")
+   - "replyText": A short encouraging message in Burmese acknowledging the save.
    - (Follow previous rules for title, content, and mermaid).
 
 MERMAID RULES (CRITICAL):
@@ -46,16 +46,11 @@ User Input: ${JSON.stringify(userInput)}
     const result = await model.generateContent(prompt);
     let responseText = result.response.text().trim();
 
-    console.log("Raw Gemini response:", responseText); // Debug log
-
-    // Clean JSON format if wrapped in markdown
     if (responseText.startsWith("```json")) {
       responseText = responseText.replace(/```json|```/g, "").trim();
     }
 
-    // Clean invisible characters that might break JSON parsing
     const sanitized = responseText.replace(/[\u0000-\u001F\u007F-\u009F]/g, "");
-
     return JSON.parse(sanitized);
   } catch (error) {
     console.error("Gemini API Error or Parse Error:", error);
@@ -65,6 +60,7 @@ User Input: ${JSON.stringify(userInput)}
 
 function splitText(text: string, limit: number = 2000): string[] {
   const chunks: string[] = [];
+  if (!text) return chunks;
   for (let i = 0; i < text.length; i += limit) {
     chunks.push(text.substring(i, i + limit));
   }
@@ -82,8 +78,15 @@ bot.on("message:text", async (ctx) => {
       throw new Error("Invalid response structure from AI");
     }
 
-    const { intent, title, content, mermaid } = response;
+    const { intent, title, content, mermaid, replyText } = response;
 
+    // ✅ CONVERSATION Mode: Reply and Stop
+    if (intent === "CONVERSATION") {
+      await ctx.api.editMessageText(ctx.chat.id, msg.message_id, String(replyText));
+      return;
+    }
+
+    // Validation for Notion saving
     if (!title || !content) {
       throw new Error("Missing required fields in AI response");
     }
@@ -94,7 +97,6 @@ bot.on("message:text", async (ctx) => {
       }
     ];
 
-    // ✅ FIXED: Different formatting based on intent
     if (intent === "STRATEGIC_PLAN") {
       children.push({
         paragraph: { rich_text: [{ text: { content: String(content) } }] }
@@ -108,12 +110,10 @@ bot.on("message:text", async (ctx) => {
       });
     }
 
-    // Always add Mermaid if it exists and is not "null"
     if (mermaid && mermaid !== "null") {
       children.push({
         heading_2: { rich_text: [{ text: { content: "System Mindmap" } }] }
       });
-
 
       const mermaidChunks = splitText(String(mermaid), 2000);
       const mermaidRichTextArray = mermaidChunks.map(chunk => ({
@@ -138,19 +138,17 @@ bot.on("message:text", async (ctx) => {
       children: children
     });
 
-    await ctx.api.editMessageText(ctx.chat.id, msg.message_id, `✅ "${title}" ကို Notion ထဲမှာ အောင်မြင်စွာ သိမ်းဆည်းပြီးပါပြီ။`);
+    const finalMsg = replyText ? replyText : `✅ "${title}" ကို Notion ထဲမှာ အောင်မြင်စွာ သိမ်းဆည်းပြီးပါပြီ။`;
+    await ctx.api.editMessageText(ctx.chat.id, msg.message_id, finalMsg);
 
   } catch (error: any) {
     console.error("Error Detail:", error);
-
     let errorMsg = "❌ လုပ်ငန်းစဉ်မှာ အမှားတစ်ခု ရှိသွားပါတယ်။";
-
     if (error.message?.includes("JSON") || error.message?.includes("Unexpected token")) {
       errorMsg = "❌ AI response မှာ ပြဿနာရှိနေပါတယ်။ ထပ်မံကြိုးစားကြည့်ပါ။";
     } else if (error.message?.includes("rate limit")) {
       errorMsg = "⏳ Rate limit ရောက်နေပါတယ်။ ၁ မိနစ်စောင့်ပြီး ထပ်ကြိုးစားပါ။";
     }
-
     await ctx.api.editMessageText(ctx.chat.id, msg.message_id, errorMsg);
   }
 });
